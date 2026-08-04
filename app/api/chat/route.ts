@@ -7,14 +7,9 @@ export const maxDuration = 60;
 
 const ALLOWED_ROLES = new Set(["user", "assistant"]);
 
-// The request body comes straight from the client, which means nothing
-// stops someone from bypassing the chat UI entirely and POSTing a
-// message with role: "system" (or anything else) directly. If that
-// were passed through unchanged, it would land in the Groq request as
-// a second system-level message alongside the real one -- potentially
-// carrying more authority than a same instruction sent as "user" would.
-// This normalizes every incoming message to "user" or "assistant" only,
-// so a forged role can never gain elevated standing in the conversation.
+// Clients can hit this endpoint directly, not just through our UI, so a
+// message could arrive with role: "system" and get treated as a second
+// system prompt. Forced everything down to user/assistant so that can't happen.
 function sanitizeMessages(raw: unknown): ChatMessage[] | null {
   if (!Array.isArray(raw) || raw.length === 0) return null;
 
@@ -55,10 +50,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // getRepoContext and isScopeViolation are independent -- the guard only
-  // needs the latest message text, not the repo data -- so they run
-  // concurrently instead of one after another. On a cache miss this
-  // roughly halves the wait before the response can start streaming.
+  // getRepoContext and isScopeViolation don't depend on each other, so
+  // run them together instead of one after the other, cuts the wait
+  // roughly in half when the repo context isn't cached.
   const latestUserMessage = messages[messages.length - 1]?.content ?? "";
 
   let systemPrompt: string;
@@ -115,13 +109,11 @@ export async function POST(req: NextRequest) {
       } catch (err) {
         console.error("Chat stream error", err);
 
-        // The HTTP response has already started by this point (headers
-        // are sent as soon as the ReadableStream is returned below), so
-        // we can't fall back to a clean JSON error response anymore --
-        // controller.error() would just abort the connection and the
-        // browser would see a raw network failure instead of a message.
-        // Enqueueing a readable explanation as stream content instead
-        // means it shows up as normal assistant text in the chat UI.
+        // Headers are already sent by the time we're in here, so we can't
+        // return a clean JSON error anymore, controller.error() would just
+        // kill the connection and look like a network failure to the browser.
+        // Enqueue the message as normal stream content instead so it shows up
+        // as a regular chat bubble.
         const status = (err as { status?: number })?.status;
         const friendlyMessage =
           status === 429

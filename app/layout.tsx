@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "explore — GitHub profile explorer",
+  title: "explore.",
   description: "Search GitHub profiles, compare users, and chat with an AI grounded in real repo data.",
 };
 
