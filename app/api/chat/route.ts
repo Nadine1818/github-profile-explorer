@@ -45,19 +45,6 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  let systemPrompt: string;
-  try {
-    const context = await getRepoContext(owner, repo);
-    systemPrompt = buildRepoSystemPrompt(context);
-  } catch (err) {
-    const status = err instanceof GitHubApiError ? err.status : 500;
-    const message = err instanceof GitHubApiError ? err.message : "Failed to load repo context";
-    return new Response(JSON.stringify({ error: message }), {
-      status,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
   let groq;
   try {
     groq = getGroqClient();
@@ -68,15 +55,29 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Second, independent line of defense against scope-breaking attempts
-  // (roleplay requests, "ignore your instructions", off-topic asks, etc):
-  // a small separate model classifies the latest user message *before*
-  // the main model ever sees it. If it's flagged, we skip the main call
-  // entirely and return a fixed refusal -- this doesn't depend on the
-  // main model correctly resisting the same message it received, which
-  // testing showed isn't reliable as a sole defense even on the larger model.
+  // getRepoContext and isScopeViolation are independent -- the guard only
+  // needs the latest message text, not the repo data -- so they run
+  // concurrently instead of one after another. On a cache miss this
+  // roughly halves the wait before the response can start streaming.
   const latestUserMessage = messages[messages.length - 1]?.content ?? "";
-  const violatesScope = await isScopeViolation(latestUserMessage);
+
+  let systemPrompt: string;
+  let violatesScope: boolean;
+  try {
+    const [context, scopeResult] = await Promise.all([
+      getRepoContext(owner, repo),
+      isScopeViolation(latestUserMessage),
+    ]);
+    systemPrompt = buildRepoSystemPrompt(context);
+    violatesScope = scopeResult;
+  } catch (err) {
+    const status = err instanceof GitHubApiError ? err.status : 500;
+    const message = err instanceof GitHubApiError ? err.message : "Failed to load repo context";
+    return new Response(JSON.stringify({ error: message }), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
 
   // Stream raw text chunks to the client as they arrive from the
   // model, so the chat UI can render tokens progressively instead
