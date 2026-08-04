@@ -71,7 +71,7 @@ export class GitHubApiError extends Error {
   }
 }
 
-async function githubFetch(path: string): Promise<unknown> {
+async function githubFetch(path: string, notFoundMessage?: string): Promise<unknown> {
   const res = await fetch(`${GITHUB_API}${path}`, {
     headers: githubHeaders(),
     // GitHub profile data changes slowly enough that a short cache
@@ -80,7 +80,7 @@ async function githubFetch(path: string): Promise<unknown> {
   });
 
   if (res.status === 404) {
-    throw new GitHubApiError(404, "GitHub user or resource not found");
+    throw new GitHubApiError(404, notFoundMessage ?? "GitHub user or resource not found");
   }
   if (res.status === 403) {
     throw new GitHubApiError(403, "GitHub API rate limit exceeded, try again shortly");
@@ -127,7 +127,10 @@ function mapRepo(raw: RawGitHubRepo): GitHubRepo {
 }
 
 export async function getUser(username: string): Promise<GitHubUser> {
-  const raw = (await githubFetch(`/users/${encodeURIComponent(username)}`)) as RawGitHubUser;
+  const raw = (await githubFetch(
+    `/users/${encodeURIComponent(username)}`,
+    `No GitHub user found with the username "${username}"`
+  )) as RawGitHubUser;
   return mapUser(raw);
 }
 
@@ -213,7 +216,7 @@ async function getRecentCommits(
 // model's general knowledge.
 export async function getRepoContext(owner: string, repo: string): Promise<RepoContext> {
   const [details, readme, fileTree, recentCommits] = await Promise.all([
-    githubFetch(`/repos/${owner}/${repo}`) as Promise<RawGitHubRepo>,
+    githubFetch(`/repos/${owner}/${repo}`, `Repository "${owner}/${repo}" not found`) as Promise<RawGitHubRepo>,
     getReadme(owner, repo),
     getFileTree(owner, repo),
     getRecentCommits(owner, repo),
