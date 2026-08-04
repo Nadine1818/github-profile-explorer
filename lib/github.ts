@@ -176,11 +176,10 @@ async function getReadme(owner: string, repo: string): Promise<string | null> {
 
 // Flat list of paths at the repo root plus one level deep, used to
 // give the AI chat a sense of the project's structure without
-// dumping the entire tree.
-async function getFileTree(owner: string, repo: string): Promise<string[]> {
+// dumping the entire tree. Takes the already-fetched repo details
+// rather than re-fetching them just to read the default branch.
+async function getFileTree(owner: string, repo: string, defaultBranch: string): Promise<string[]> {
   try {
-    const branchInfo = (await githubFetch(`/repos/${owner}/${repo}`)) as RawGitHubRepo;
-    const defaultBranch = branchInfo.default_branch || "main";
     const raw = (await githubFetch(
       `/repos/${owner}/${repo}/git/trees/${defaultBranch}?recursive=1`
     )) as { tree?: RawTreeEntry[] };
@@ -211,18 +210,49 @@ async function getRecentCommits(
   }
 }
 
+// Repo chat re-sends the same owner/repo on every message in a
+// conversation. Without this, each message would re-fetch the repo's
+// details, README, file tree, and recent commits from scratch -- 4
+// GitHub API calls per chat turn, for data that's already sitting in
+// memory from the previous turn seconds earlier.
+//
+// This is a simple in-memory cache, which comes with a real caveat
+// worth being upfront about: it lives in the Node process's memory,
+// so it works reliably for local dev and for a single long-running
+// server, but on serverless platforms (Vercel's default deployment
+// model) separate invocations can land on different instances that
+// don't share this Map, so it isn't a guaranteed cache hit in that
+// environment. It's still a genuine improvement there (same-instance
+// requests do hit it), just not a 100% guarantee across all requests
+// the way a shared store like Redis would be.
+const REPO_CONTEXT_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const repoContextCache = new Map<string, { value: RepoContext; expiresAt: number }>();
+
 // Pulls everything the AI chat needs to answer questions about one
 // specific repo, grounded in real repo content rather than the
 // model's general knowledge.
 export async function getRepoContext(owner: string, repo: string): Promise<RepoContext> {
-  const [details, readme, fileTree, recentCommits] = await Promise.all([
-    githubFetch(`/repos/${owner}/${repo}`, `Repository "${owner}/${repo}" not found`) as Promise<RawGitHubRepo>,
+  const cacheKey = `${owner}/${repo}`.toLowerCase();
+  const cached = repoContextCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    console.log(`[repo-context] cache hit for ${cacheKey}`);
+    return cached.value;
+  }
+  console.log(`[repo-context] cache miss for ${cacheKey}, fetching from GitHub`);
+
+  const details = (await githubFetch(
+    `/repos/${owner}/${repo}`,
+    `Repository "${owner}/${repo}" not found`
+  )) as RawGitHubRepo;
+  const defaultBranch = details.default_branch || "main";
+
+  const [readme, fileTree, recentCommits] = await Promise.all([
     getReadme(owner, repo),
-    getFileTree(owner, repo),
+    getFileTree(owner, repo, defaultBranch),
     getRecentCommits(owner, repo),
   ]);
 
-  return {
+  const context: RepoContext = {
     fullName: details.full_name,
     description: details.description,
     readme,
@@ -231,6 +261,9 @@ export async function getRepoContext(owner: string, repo: string): Promise<RepoC
     language: details.language,
     stars: details.stargazers_count,
   };
+
+  repoContextCache.set(cacheKey, { value: context, expiresAt: Date.now() + REPO_CONTEXT_TTL_MS });
+  return context;
 }
 
 // Commits authored by `username` across all their repos in the last
