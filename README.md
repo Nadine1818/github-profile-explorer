@@ -104,6 +104,15 @@ before deploying -- the AI features will return a clear error until you do.
   contributed to are shown separately there too). This also keeps the
   compare feature's star/fork totals attributable to actual ownership
   rather than incidental contributions to someone else's repo.
+- **Repo count differs between the Explore and Compare views, on purpose**:
+  the Explore page's repo grid shows every owned repo, including forks. The
+  Compare view's metrics (`lib/metrics.ts`, `buildMetrics`) filter forks out
+  before computing stars/forks/language totals, so someone who forked a
+  popular project doesn't get that project's stars attributed to them in a
+  comparison. On accounts with several forks (e.g. `torvalds`, who forks
+  other kernel-adjacent repos), the two views will show different repo
+  counts for the same profile -- that's the fork filter working as
+  intended, not a bug.
 - **Rate limits**: GitHub API errors (404 user not found, 403 rate limit)
   are caught and surfaced as clear messages rather than generic 500s.
 - **Chat safety architecture**: repo chat uses two models, not one --
