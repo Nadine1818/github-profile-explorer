@@ -5,13 +5,40 @@ import { ChatMessage, CHAT_ERROR_MARKER } from "@/lib/types";
 
 export const maxDuration = 60;
 
+const ALLOWED_ROLES = new Set(["user", "assistant"]);
+
+// The request body comes straight from the client, which means nothing
+// stops someone from bypassing the chat UI entirely and POSTing a
+// message with role: "system" (or anything else) directly. If that
+// were passed through unchanged, it would land in the Groq request as
+// a second system-level message alongside the real one -- potentially
+// carrying more authority than a same instruction sent as "user" would.
+// This normalizes every incoming message to "user" or "assistant" only,
+// so a forged role can never gain elevated standing in the conversation.
+function sanitizeMessages(raw: unknown): ChatMessage[] | null {
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+
+  const sanitized: ChatMessage[] = [];
+  for (const m of raw) {
+    if (!m || typeof m !== "object") continue;
+    const content = (m as { content?: unknown }).content;
+    if (typeof content !== "string" || !content.trim()) continue;
+
+    const rawRole = (m as { role?: unknown }).role;
+    const role = typeof rawRole === "string" && ALLOWED_ROLES.has(rawRole) ? rawRole : "user";
+    sanitized.push({ role: role as ChatMessage["role"], content });
+  }
+
+  return sanitized.length > 0 ? sanitized : null;
+}
+
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   const owner: string | undefined = body?.owner;
   const repo: string | undefined = body?.repo;
-  const messages: ChatMessage[] | undefined = body?.messages;
+  const messages = sanitizeMessages(body?.messages);
 
-  if (!owner || !repo || !Array.isArray(messages) || messages.length === 0) {
+  if (!owner || !repo || !messages) {
     return new Response(
       JSON.stringify({ error: "owner, repo, and a non-empty messages array are required" }),
       { status: 400, headers: { "Content-Type": "application/json" } }
