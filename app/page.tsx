@@ -107,7 +107,11 @@ export default function Home() {
                 <span className="mb-3 block font-mono-tabular text-xs" style={{ color: "var(--text-dim)" }}>
                   # profile notes
                 </span>
-                <NotesPanel key={profile.user.login} scopeKey={`profile:${profile.user.login}`} />
+                <NotesPanel
+                  key={profile.user.login}
+                  scopeKey={`profile:${profile.user.login}`}
+                  fillHeight={false}
+                />
               </div>
             </div>
           )}

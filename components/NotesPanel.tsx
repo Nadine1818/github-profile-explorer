@@ -5,10 +5,21 @@ import { RepoNote } from "@/lib/types";
 import { addNote, deleteNote, getNotesForRepo } from "@/lib/storage";
 import { formatRelativeDate } from "@/lib/format";
 
+interface Props {
+  scopeKey: string;
+  // true (default) when the parent gives this a real, definite height --
+  // e.g. inside RepoDetailPanel's slide-over -- so the notes list can
+  // grow to fill it and the input pins to the panel's actual bottom
+  // edge. false on the plain profile page, where there's no parent
+  // height to fill, so instead it just sizes to its content and caps
+  // itself with internal scrolling past a fixed height.
+  fillHeight?: boolean;
+}
+
 // Callers should render this with `key={scopeKey}` whenever scopeKey
 // can change (e.g. switching repos) so state initializes fresh per
 // scope, rather than syncing it via setState-in-effect.
-export default function NotesPanel({ scopeKey }: { scopeKey: string }) {
+export default function NotesPanel({ scopeKey, fillHeight = true }: Props) {
   const [notes, setNotes] = useState<RepoNote[]>(() => getNotesForRepo(scopeKey));
   const [draft, setDraft] = useState("");
 
@@ -27,12 +38,17 @@ export default function NotesPanel({ scopeKey }: { scopeKey: string }) {
   }
 
   return (
-    <div className="flex h-full max-h-[70vh] flex-col">
-      <div className="themed-scroll flex-1 space-y-2 overflow-y-auto pr-1">
+    <div className={fillHeight ? "flex h-full flex-col" : "flex flex-col"}>
+      <div
+        className={
+          fillHeight
+            ? "themed-scroll flex-1 space-y-2 overflow-y-auto pr-1"
+            : "themed-scroll max-h-[50vh] space-y-2 overflow-y-auto pr-1"
+        }
+      >
         {notes.length === 0 && (
           <p className="text-sm" style={{ color: "var(--text-dim)" }}>
-            No notes yet. Notes you add here stay saved on this browser and show up again
-            next time you open this profile or repo.
+            No notes yet.
           </p>
         )}
         {notes.map((note) => (
