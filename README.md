@@ -5,7 +5,7 @@ and includes an AI chat grounded in each repo's real README/file structure/commi
 
 Built for the Smarterminds "GitHub API Integration Challenge."
 
-**[Live demo](#) · [Repo](#)** _(fill in your deployed Vercel URL and repo link here before submitting)_
+**[Live demo](https://github-profile-explorer-iota.vercel.app/) · [Repo](https://github.com/Nadine1818/github-profile-explorer)**
 
 ## Contents
 
