@@ -109,9 +109,13 @@ before deploying -- the AI features will return a clear error until you do.
 - **Notes storage**: no login/database in the brief, so notes persist in
   the browser via `localStorage`, keyed per profile or per repo. They come
   back when you revisit the same profile/repo on the same browser.
-- **Chat grounding**: each chat request re-fetches the repo's README, root
-  file tree, and last 10 commits server-side and puts them in the system
-  prompt, so the model answers from the actual repo rather than guessing.
+- **Chat grounding**: the repo's README, root file tree, and last 10
+  commits are fetched server-side and put into the system prompt, so the
+  model answers from the actual repo rather than guessing. That fetch is
+  cached per repo for 5 minutes (see the performance note below), so it's
+  not re-fetched on every single message -- but the model still only ever
+  sees real, freshly-sourced repo data, never its own training knowledge
+  about the repo.
 - **Repo list scope**: uses GitHub's `type=owner` scope, which matches how
   GitHub's own profile page works (repos you own vs. repos you've merely
   contributed to are shown separately there too). This also keeps the
