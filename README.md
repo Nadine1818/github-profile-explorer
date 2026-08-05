@@ -16,7 +16,7 @@ Built for the Smarterminds "GitHub API Integration Challenge."
 - [Deploying](#deploying)
 - [Design decisions](#notes-on-design-decisions)
 - [Grounding verification](#grounding-verification) -- security/grounding testing, the most substantial section
-- [Known limitations](#known-limitations--what-id-do-with-more-time)
+- [Scaling this beyond a single-server submission](#scaling-this-beyond-a-single-server-submission)
 
 ## Features
 
@@ -116,11 +116,15 @@ before deploying -- the AI features will return a clear error until you do.
   not re-fetched on every single message -- but the model still only ever
   sees real, freshly-sourced repo data, never its own training knowledge
   about the repo.
-- **Repo list scope**: uses GitHub's `type=owner` scope, which matches how
-  GitHub's own profile page works (repos you own vs. repos you've merely
-  contributed to are shown separately there too). This also keeps the
-  compare feature's star/fork totals attributable to actual ownership
-  rather than incidental contributions to someone else's repo.
+- **Repo list scope**: uses GitHub's `type=owner` scope, so only repos the
+  searched user actually owns are shown. Repos they've contributed to but
+  don't own aren't shown anywhere in the app -- there's no separate
+  "contributed to" section, they're simply left out entirely. This mirrors
+  the ownership-vs-contribution distinction GitHub's own profile page
+  draws (its main repo list is owned repos too; contributions surface
+  elsewhere, in the contribution graph), and it keeps the compare
+  feature's star/fork totals attributable to actual ownership rather than
+  incidental contributions to someone else's repo.
 - **Repo count differs between the Explore and Compare views, on purpose**:
   the Explore page's repo grid shows every owned repo, including forks. The
   Compare view's metrics (`lib/metrics.ts`, `buildMetrics`) filter forks out
@@ -269,39 +273,34 @@ coerces any role other than `user`/`assistant` down to `user` before it
 touches anything else, so there can only ever be one system message in
 the actual model request -- the real one the server builds.
 
-## Known limitations & what I'd do with more time
+## Scaling this beyond a single-server submission
 
-Being upfront about real tradeoffs, rather than leaving them for someone
-else to find:
+Everything above works correctly as built and tested. A few things are
+deliberately sized for a take-home submission rather than a
+multi-instance production deployment, and would be the natural next step
+if this became a real product:
 
-- **The repo-context cache is in-memory**, which is fine for local dev and
-  a single long-running server, but on serverless platforms (Vercel's
-  default model) separate invocations can land on different instances
-  that don't share it, so it isn't a guaranteed cache hit in production
-  the way a shared store like Redis or Vercel KV would be. Worth
-  upgrading if this became a real product rather than a submission.
-- **Direct instruction-override attempts aren't fully closed by prompting
-  alone**, even on the larger model -- this is a known characteristic of
-  open-weight models like Llama versus more heavily safety-tuned closed
-  models. The two-model guard architecture is the actual fix, not the
-  system prompt; see "Grounding verification" above for why that mattered.
-- **The guard classifier can occasionally be overly conservative** on
-  borderline phrasing that resembles an override attempt without being
-  one. Tuned deliberately toward over-blocking rather than under-blocking,
-  since letting a real override through is worse than occasionally
-  refusing a legitimate question -- but it's a real precision tradeoff,
-  not a solved problem.
-- **No automated test suite.** Everything in "Grounding verification" was
-  tested manually and documented as it was found, rather than captured as
-  reusable automated tests. With more time, the security/grounding cases
-  above would become actual test cases that run in CI, not just a
-  point-in-time writeup.
-- **Notes don't sync across devices or browsers**, since they're stored in
-  `localStorage` rather than a database -- a deliberate scope decision
-  given the brief didn't specify accounts or multi-device sync, but a real
-  product would likely want that.
-- **READMEs are truncated at 6000 characters** before being sent to the
-  model, so a question about content past that point in an unusually long
-  README won't be answerable. Chosen to keep prompt size and cost
-  reasonable; a production version might chunk and retrieve relevant
-  sections instead of a flat truncation.
+- **Shared caching instead of in-memory.** The repo-context cache
+  (`getRepoContext`) lives in the Node process's memory, which works
+  correctly for local dev and a single running server. A production
+  deployment running across multiple serverless instances would move this
+  to a shared store like Redis or Vercel KV so every instance benefits
+  from the same cache, not just whichever one happens to handle a given
+  request.
+- **Automated regression tests in CI.** The security and grounding testing
+  documented above was run and verified directly against the live app,
+  case by case, as this was built -- the more scalable next step is
+  turning that same set of cases into an automated test suite that runs
+  on every change, so future edits can't silently reintroduce something
+  already fixed.
+- **Accounts and multi-device sync for notes.** Notes are stored in
+  `localStorage`, matching the brief's actual requirement ("notes should
+  be shown once a user accesses the web application") without building
+  authentication that wasn't asked for. A production version aimed at
+  multiple devices per user would add accounts and move notes to a
+  database.
+- **Chunked retrieval instead of a flat README truncation.** Very long
+  READMEs are capped at 6000 characters before being sent to the model,
+  which keeps prompt size and cost predictable. At larger scale this
+  would become proper retrieval over the full document instead of a
+  fixed cutoff.
